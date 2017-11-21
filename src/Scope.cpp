@@ -26,6 +26,13 @@ struct Scope : Module {
 	enum OutputIds {
 		NUM_OUTPUTS
 	};
+	enum LightIds {
+		PLOT_LIGHT,
+		LISSAJOUS_LIGHT,
+		INTERNAL_LIGHT,
+		EXTERNAL_LIGHT,
+		NUM_LIGHTS
+	};
 
 	float bufferX[BUFFER_SIZE] = {};
 	float bufferY[BUFFER_SIZE] = {};
@@ -36,20 +43,19 @@ struct Scope : Module {
 	SchmittTrigger extTrigger;
 	bool lissajous = false;
 	bool external = false;
-	float lights[4] = {};
 	SchmittTrigger resetTrigger;
 
-	Scope() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {}
-	void step();
+	Scope() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {}
+	void step() override;
 
-	json_t *toJson() {
+	json_t *toJson() override {
 		json_t *rootJ = json_object();
 		json_object_set_new(rootJ, "lissajous", json_integer((int) lissajous));
 		json_object_set_new(rootJ, "external", json_integer((int) external));
 		return rootJ;
 	}
 
-	void fromJson(json_t *rootJ) {
+	void fromJson(json_t *rootJ) override {
 		json_t *sumJ = json_object_get(rootJ, "lissajous");
 		if (sumJ)
 			lissajous = json_integer_value(sumJ);
@@ -59,7 +65,7 @@ struct Scope : Module {
 			external = json_integer_value(extJ);
 	}
 
-	void initialize() {
+	void reset() override {
 		lissajous = false;
 		external = false;
 	}
@@ -71,18 +77,18 @@ void Scope::step() {
 	if (sumTrigger.process(params[LISSAJOUS_PARAM].value)) {
 		lissajous = !lissajous;
 	}
-	lights[0] = lissajous ? 0.0 : 1.0;
-	lights[1] = lissajous ? 1.0 : 0.0;
+	lights[PLOT_LIGHT].value = lissajous ? 0.0 : 1.0;
+	lights[LISSAJOUS_LIGHT].value = lissajous ? 1.0 : 0.0;
 
 	if (extTrigger.process(params[EXTERNAL_PARAM].value)) {
 		external = !external;
 	}
-	lights[2] = external ? 0.0 : 1.0;
-	lights[3] = external ? 1.0 : 0.0;
+	lights[INTERNAL_LIGHT].value = external ? 0.0 : 1.0;
+	lights[EXTERNAL_LIGHT].value = external ? 1.0 : 0.0;
 
 	// Compute time
 	float deltaTime = powf(2.0, params[TIME_PARAM].value);
-	int frameCount = (int)ceilf(deltaTime * gSampleRate);
+	int frameCount = (int)ceilf(deltaTime * engineGetSampleRate());
 
 	// Add frame to buffer
 	if (bufferIndex < BUFFER_SIZE) {
@@ -115,12 +121,12 @@ void Scope::step() {
 
 		// Reset if triggered
 		float holdTime = 0.1;
-		if (resetTrigger.process(gate) || (frameIndex >= gSampleRate * holdTime)) {
+		if (resetTrigger.process(gate) || (frameIndex >= engineGetSampleRate() * holdTime)) {
 			bufferIndex = 0; frameIndex = 0; return;
 		}
 
 		// Reset if we've waited too long
-		if (frameIndex >= gSampleRate * holdTime) {
+		if (frameIndex >= engineGetSampleRate() * holdTime) {
 			bufferIndex = 0; frameIndex = 0; return;
 		}
 	}
@@ -240,7 +246,7 @@ struct ScopeDisplay : TransparentWidget {
 		nvgText(vg, pos.x + 22, pos.y + 11, text, NULL);
 	}
 
-	void draw(NVGcontext *vg) {
+	void draw(NVGcontext *vg) override {
 		float gainX = powf(2.0, roundf(module->params[Scope::X_SCALE_PARAM].value));
 		float gainY = powf(2.0, roundf(module->params[Scope::Y_SCALE_PARAM].value));
 		float offsetX = module->params[Scope::X_POS_PARAM].value;
@@ -319,21 +325,21 @@ ScopeWidget::ScopeWidget() {
 		addChild(display);
 	}
 
-	addParam(createParam<Davies1900hSmallBlackSnapKnob>(Vec(15, 209), module, Scope::X_SCALE_PARAM, -2.0, 8.0, 0.0));
-	addParam(createParam<Davies1900hSmallBlackKnob>(Vec(15, 263), module, Scope::X_POS_PARAM, -10.0, 10.0, 0.0));
-	addParam(createParam<Davies1900hSmallBlackSnapKnob>(Vec(61, 209), module, Scope::Y_SCALE_PARAM, -2.0, 8.0, 0.0));
-	addParam(createParam<Davies1900hSmallBlackKnob>(Vec(61, 263), module, Scope::Y_POS_PARAM, -10.0, 10.0, 0.0));
-	addParam(createParam<Davies1900hSmallBlackKnob>(Vec(107, 209), module, Scope::TIME_PARAM, -6.0, -16.0, -14.0));
+	addParam(createParam<RoundSmallBlackSnapKnob>(Vec(15, 209), module, Scope::X_SCALE_PARAM, -2.0, 8.0, 0.0));
+	addParam(createParam<RoundSmallBlackKnob>(Vec(15, 263), module, Scope::X_POS_PARAM, -10.0, 10.0, 0.0));
+	addParam(createParam<RoundSmallBlackSnapKnob>(Vec(61, 209), module, Scope::Y_SCALE_PARAM, -2.0, 8.0, 0.0));
+	addParam(createParam<RoundSmallBlackKnob>(Vec(61, 263), module, Scope::Y_POS_PARAM, -10.0, 10.0, 0.0));
+	addParam(createParam<RoundSmallBlackKnob>(Vec(107, 209), module, Scope::TIME_PARAM, -6.0, -16.0, -14.0));
 	addParam(createParam<CKD6>(Vec(106, 262), module, Scope::LISSAJOUS_PARAM, 0.0, 1.0, 0.0));
-	addParam(createParam<Davies1900hSmallBlackKnob>(Vec(153, 209), module, Scope::TRIG_PARAM, -10.0, 10.0, 0.0));
+	addParam(createParam<RoundSmallBlackKnob>(Vec(153, 209), module, Scope::TRIG_PARAM, -10.0, 10.0, 0.0));
 	addParam(createParam<CKD6>(Vec(152, 262), module, Scope::EXTERNAL_PARAM, 0.0, 1.0, 0.0));
 
 	addInput(createInput<PJ301MPort>(Vec(17, 319), module, Scope::X_INPUT));
 	addInput(createInput<PJ301MPort>(Vec(63, 319), module, Scope::Y_INPUT));
 	addInput(createInput<PJ301MPort>(Vec(154, 319), module, Scope::TRIG_INPUT));
 
-	addChild(createValueLight<TinyLight<GreenValueLight>>(Vec(104, 251), &module->lights[0]));
-	addChild(createValueLight<TinyLight<GreenValueLight>>(Vec(104, 296), &module->lights[1]));
-	addChild(createValueLight<TinyLight<GreenValueLight>>(Vec(150, 251), &module->lights[2]));
-	addChild(createValueLight<TinyLight<GreenValueLight>>(Vec(150, 296), &module->lights[3]));
+	addChild(createLight<SmallLight<GreenLight>>(Vec(104, 251), module, Scope::PLOT_LIGHT));
+	addChild(createLight<SmallLight<GreenLight>>(Vec(104, 296), module, Scope::LISSAJOUS_LIGHT));
+	addChild(createLight<SmallLight<GreenLight>>(Vec(150, 251), module, Scope::INTERNAL_LIGHT));
+	addChild(createLight<SmallLight<GreenLight>>(Vec(150, 296), module, Scope::EXTERNAL_LIGHT));
 }

@@ -23,16 +23,22 @@ struct ADSR : Module {
 		ENVELOPE_OUTPUT,
 		NUM_OUTPUTS
 	};
+	enum LightIds {
+		ATTACK_LIGHT,
+		DECAY_LIGHT,
+		SUSTAIN_LIGHT,
+		RELEASE_LIGHT,
+		NUM_LIGHTS
+	};
 
 	bool decaying = false;
 	float env = 0.0;
 	SchmittTrigger trigger;
-	float lights[4] = {};
 
-	ADSR() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {
+	ADSR() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {
 		trigger.setThresholds(0.0, 1.0);
 	}
-	void step();
+	void step() override;
 };
 
 
@@ -41,12 +47,6 @@ void ADSR::step() {
 	float decay = clampf(params[DECAY_PARAM].value + inputs[DECAY_INPUT].value / 10.0, 0.0, 1.0);
 	float sustain = clampf(params[SUSTAIN_PARAM].value + inputs[SUSTAIN_INPUT].value / 10.0, 0.0, 1.0);
 	float release = clampf(params[RELEASE_PARAM].value + inputs[RELEASE_PARAM].value / 10.0, 0.0, 1.0);
-
-	// Lights
-	lights[0] = 2.0*attack - 1.0;
-	lights[1] = 2.0*decay - 1.0;
-	lights[2] = 2.0*sustain - 1.0;
-	lights[3] = 2.0*release - 1.0;
 
 	// Gate and trigger
 	bool gated = inputs[GATE_INPUT].value >= 1.0;
@@ -62,7 +62,7 @@ void ADSR::step() {
 				env = sustain;
 			}
 			else {
-				env += powf(base, 1 - decay) / maxTime * (sustain - env) / gSampleRate;
+				env += powf(base, 1 - decay) / maxTime * (sustain - env) / engineGetSampleRate();
 			}
 		}
 		else {
@@ -72,7 +72,7 @@ void ADSR::step() {
 				env = 1.0;
 			}
 			else {
-				env += powf(base, 1 - attack) / maxTime * (1.01 - env) / gSampleRate;
+				env += powf(base, 1 - attack) / maxTime * (1.01 - env) / engineGetSampleRate();
 			}
 			if (env >= 1.0) {
 				env = 1.0;
@@ -86,12 +86,21 @@ void ADSR::step() {
 			env = 0.0;
 		}
 		else {
-			env += powf(base, 1 - release) / maxTime * (0.0 - env) / gSampleRate;
+			env += powf(base, 1 - release) / maxTime * (0.0 - env) / engineGetSampleRate();
 		}
 		decaying = false;
 	}
 
+	bool sustaining = nearf(env, sustain, 1e-3);
+	bool resting = nearf(env, 0.0, 1e-3);
+
 	outputs[ENVELOPE_OUTPUT].value = 10.0 * env;
+
+	// Lights
+	lights[ATTACK_LIGHT].value = (gated && !decaying) ? 1.0 : 0.0;
+	lights[DECAY_LIGHT].value = (gated && decaying && !sustaining) ? 1.0 : 0.0;
+	lights[SUSTAIN_LIGHT].value = (gated && decaying && sustaining) ? 1.0 : 0.0;
+	lights[RELEASE_LIGHT].value = (!gated && !resting) ? 1.0 : 0.0;
 }
 
 
@@ -126,8 +135,8 @@ ADSRWidget::ADSRWidget() {
 	addInput(createInput<PJ301MPort>(Vec(48, 320), module, ADSR::TRIG_INPUT));
 	addOutput(createOutput<PJ301MPort>(Vec(87, 320), module, ADSR::ENVELOPE_OUTPUT));
 
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(94, 41), &module->lights[0]));
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(94, 108), &module->lights[1]));
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(94, 175), &module->lights[2]));
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(94, 241), &module->lights[3]));
+	addChild(createLight<SmallLight<RedLight>>(Vec(94, 41), module, ADSR::ATTACK_LIGHT));
+	addChild(createLight<SmallLight<RedLight>>(Vec(94, 109), module, ADSR::DECAY_LIGHT));
+	addChild(createLight<SmallLight<RedLight>>(Vec(94, 175), module, ADSR::SUSTAIN_LIGHT));
+	addChild(createLight<SmallLight<RedLight>>(Vec(94, 242), module, ADSR::RELEASE_LIGHT));
 }

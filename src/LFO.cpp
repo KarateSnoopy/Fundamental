@@ -2,14 +2,14 @@
 #include "dsp/digital.hpp"
 
 
-struct LFOGenerator {
+struct LowFrequencyOscillator {
 	float phase = 0.0;
 	float pw = 0.5;
 	float freq = 1.0;
 	bool offset = false;
 	bool invert = false;
 	SchmittTrigger resetTrigger;
-	LFOGenerator() {
+	LowFrequencyOscillator() {
 		resetTrigger.setThresholds(0.0, 0.01);
 	}
 	void setPitch(float pitch) {
@@ -90,29 +90,34 @@ struct LFO : Module {
 		SQR_OUTPUT,
 		NUM_OUTPUTS
 	};
+	enum LightIds {
+		PHASE_POS_LIGHT,
+		PHASE_NEG_LIGHT,
+		NUM_LIGHTS
+	};
 
-	LFOGenerator generator;
-	float lights[1] = {};
+	LowFrequencyOscillator oscillator;
 
-	LFO() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {}
-	void step();
+	LFO() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {}
+	void step() override;
 };
 
 
 void LFO::step() {
-	generator.setPitch(params[FREQ_PARAM].value + params[FM1_PARAM].value * inputs[FM1_INPUT].value + params[FM2_PARAM].value * inputs[FM2_INPUT].value);
-	generator.setPulseWidth(params[PW_PARAM].value + params[PWM_PARAM].value * inputs[PW_INPUT].value / 10.0);
-	generator.offset = (params[OFFSET_PARAM].value > 0.0);
-	generator.invert = (params[INVERT_PARAM].value <= 0.0);
-	generator.step(1.0 / gSampleRate);
-	generator.setReset(inputs[RESET_INPUT].value);
+	oscillator.setPitch(params[FREQ_PARAM].value + params[FM1_PARAM].value * inputs[FM1_INPUT].value + params[FM2_PARAM].value * inputs[FM2_INPUT].value);
+	oscillator.setPulseWidth(params[PW_PARAM].value + params[PWM_PARAM].value * inputs[PW_INPUT].value / 10.0);
+	oscillator.offset = (params[OFFSET_PARAM].value > 0.0);
+	oscillator.invert = (params[INVERT_PARAM].value <= 0.0);
+	oscillator.step(1.0 / engineGetSampleRate());
+	oscillator.setReset(inputs[RESET_INPUT].value);
 
-	outputs[SIN_OUTPUT].value = 5.0 * generator.sin();
-	outputs[TRI_OUTPUT].value = 5.0 * generator.tri();
-	outputs[SAW_OUTPUT].value = 5.0 * generator.saw();
-	outputs[SQR_OUTPUT].value = 5.0 * generator.sqr();
+	outputs[SIN_OUTPUT].value = 5.0 * oscillator.sin();
+	outputs[TRI_OUTPUT].value = 5.0 * oscillator.tri();
+	outputs[SAW_OUTPUT].value = 5.0 * oscillator.saw();
+	outputs[SQR_OUTPUT].value = 5.0 * oscillator.sqr();
 
-	lights[0] = generator.light();
+	lights[PHASE_POS_LIGHT].setBrightnessSmooth(fmaxf(0.0, oscillator.light()));
+	lights[PHASE_NEG_LIGHT].setBrightnessSmooth(fmaxf(0.0, -oscillator.light()));
 }
 
 
@@ -152,7 +157,7 @@ LFOWidget::LFOWidget() {
 	addOutput(createOutput<PJ301MPort>(Vec(80, 320), module, LFO::SAW_OUTPUT));
 	addOutput(createOutput<PJ301MPort>(Vec(114, 320), module, LFO::SQR_OUTPUT));
 
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(99, 42), &module->lights[0]));
+	addChild(createLight<SmallLight<GreenRedLight>>(Vec(99, 42.5), module, LFO::PHASE_POS_LIGHT));
 }
 
 
@@ -176,34 +181,39 @@ struct LFO2 : Module {
 		INTERP_OUTPUT,
 		NUM_OUTPUTS
 	};
+	enum LightIds {
+		PHASE_POS_LIGHT,
+		PHASE_NEG_LIGHT,
+		NUM_LIGHTS
+	};
 
-	LFOGenerator generator;
-	float lights[1] = {};
+	LowFrequencyOscillator oscillator;
 
-	LFO2() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {}
-	void step();
+	LFO2() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {}
+	void step() override;
 };
 
 
 void LFO2::step() {
-	generator.setPitch(params[FREQ_PARAM].value + params[FM_PARAM].value * inputs[FM_INPUT].value);
-	generator.offset = (params[OFFSET_PARAM].value > 0.0);
-	generator.invert = (params[INVERT_PARAM].value <= 0.0);
-	generator.step(1.0 / gSampleRate);
-	generator.setReset(inputs[RESET_INPUT].value);
+	oscillator.setPitch(params[FREQ_PARAM].value + params[FM_PARAM].value * inputs[FM_INPUT].value);
+	oscillator.offset = (params[OFFSET_PARAM].value > 0.0);
+	oscillator.invert = (params[INVERT_PARAM].value <= 0.0);
+	oscillator.step(1.0 / engineGetSampleRate());
+	oscillator.setReset(inputs[RESET_INPUT].value);
 
 	float wave = params[WAVE_PARAM].value + inputs[WAVE_INPUT].value;
 	wave = clampf(wave, 0.0, 3.0);
 	float interp;
 	if (wave < 1.0)
-		interp = crossf(generator.sin(), generator.tri(), wave);
+		interp = crossf(oscillator.sin(), oscillator.tri(), wave);
 	else if (wave < 2.0)
-		interp = crossf(generator.tri(), generator.saw(), wave - 1.0);
+		interp = crossf(oscillator.tri(), oscillator.saw(), wave - 1.0);
 	else
-		interp = crossf(generator.saw(), generator.sqr(), wave - 2.0);
+		interp = crossf(oscillator.saw(), oscillator.sqr(), wave - 2.0);
 	outputs[INTERP_OUTPUT].value = 5.0 * interp;
 
-	lights[0] = generator.light();
+	lights[PHASE_POS_LIGHT].setBrightnessSmooth(fmaxf(0.0, oscillator.light()));
+	lights[PHASE_NEG_LIGHT].setBrightnessSmooth(fmaxf(0.0, -oscillator.light()));
 }
 
 
@@ -237,5 +247,5 @@ LFO2Widget::LFO2Widget() {
 
 	addOutput(createOutput<PJ301MPort>(Vec(54, 319), module, LFO2::INTERP_OUTPUT));
 
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(68, 41), &module->lights[0]));
+	addChild(createLight<SmallLight<GreenRedLight>>(Vec(68, 42.5), module, LFO2::PHASE_POS_LIGHT));
 }

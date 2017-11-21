@@ -60,7 +60,7 @@ struct VoltageControlledOscillator {
 			// Adjust pitch slew
 			if (++pitchSlewIndex > 32) {
 				const float pitchSlewTau = 100.0; // Time constant for leaky integrator in seconds
-				pitchSlew += (randomNormal() - pitchSlew / pitchSlewTau) / gSampleRate;
+				pitchSlew += (randomNormal() - pitchSlew / pitchSlewTau) / engineGetSampleRate();
 				pitchSlewIndex = 0;
 			}
 		}
@@ -185,14 +185,18 @@ struct VCO : Module {
 		TRI_OUTPUT,
 		SAW_OUTPUT,
 		SQR_OUTPUT,
-		PITCH_LIGHT,
 		NUM_OUTPUTS
+	};
+	enum LightIds {
+		PHASE_POS_LIGHT,
+		PHASE_NEG_LIGHT,
+		NUM_LIGHTS
 	};
 
 	VoltageControlledOscillator<16, 16> oscillator;
 
-	VCO() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {}
-	void step();
+	VCO() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {}
+	void step() override;
 };
 
 
@@ -209,7 +213,7 @@ void VCO::step() {
 	oscillator.setPulseWidth(params[PW_PARAM].value + params[PWM_PARAM].value * inputs[PW_INPUT].value / 10.0);
 	oscillator.syncEnabled = inputs[SYNC_INPUT].active;
 
-	oscillator.process(1.0 / gSampleRate, inputs[SYNC_INPUT].value);
+	oscillator.process(1.0 / engineGetSampleRate(), inputs[SYNC_INPUT].value);
 
 	// Set output
 	if (outputs[SIN_OUTPUT].active)
@@ -221,7 +225,8 @@ void VCO::step() {
 	if (outputs[SQR_OUTPUT].active)
 		outputs[SQR_OUTPUT].value = 5.0 * oscillator.sqr();
 
-	outputs[PITCH_LIGHT].value = oscillator.light();
+	lights[PHASE_POS_LIGHT].setBrightnessSmooth(fmaxf(0.0, oscillator.light()));
+	lights[PHASE_NEG_LIGHT].setBrightnessSmooth(fmaxf(0.0, -oscillator.light()));
 }
 
 
@@ -261,7 +266,7 @@ VCOWidget::VCOWidget() {
 	addOutput(createOutput<PJ301MPort>(Vec(80, 320), module, VCO::SAW_OUTPUT));
 	addOutput(createOutput<PJ301MPort>(Vec(114, 320), module, VCO::SQR_OUTPUT));
 
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(99, 42), &module->outputs[VCO::PITCH_LIGHT].value));
+	addChild(createLight<SmallLight<GreenRedLight>>(Vec(99, 42.5), module, VCO::PHASE_POS_LIGHT));
 }
 
 
@@ -282,14 +287,18 @@ struct VCO2 : Module {
 	};
 	enum OutputIds {
 		OUT_OUTPUT,
-		PITCH_LIGHT,
 		NUM_OUTPUTS
+	};
+	enum LightIds {
+		PHASE_POS_LIGHT,
+		PHASE_NEG_LIGHT,
+		NUM_LIGHTS
 	};
 
 	VoltageControlledOscillator<8, 8> oscillator;
 
-	VCO2() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS) {}
-	void step();
+	VCO2() : Module(NUM_PARAMS, NUM_INPUTS, NUM_OUTPUTS, NUM_LIGHTS) {}
+	void step() override;
 };
 
 
@@ -301,7 +310,7 @@ void VCO2::step() {
 	oscillator.setPitch(0.0, pitchCv);
 	oscillator.syncEnabled = inputs[SYNC_INPUT].active;
 
-	oscillator.process(1.0 / gSampleRate, inputs[SYNC_INPUT].value);
+	oscillator.process(1.0 / engineGetSampleRate(), inputs[SYNC_INPUT].value);
 
 	// Set output
 	float wave = clampf(params[WAVE_PARAM].value + inputs[WAVE_INPUT].value, 0.0, 3.0);
@@ -314,7 +323,8 @@ void VCO2::step() {
 		out = crossf(oscillator.saw(), oscillator.sqr(), wave - 2.0);
 	outputs[OUT_OUTPUT].value = 5.0 * out;
 
-	outputs[PITCH_LIGHT].value = oscillator.light();
+	lights[PHASE_POS_LIGHT].setBrightnessSmooth(fmaxf(0.0, oscillator.light()));
+	lights[PHASE_NEG_LIGHT].setBrightnessSmooth(fmaxf(0.0, -oscillator.light()));
 }
 
 
@@ -348,7 +358,7 @@ VCO2Widget::VCO2Widget() {
 
 	addOutput(createOutput<PJ301MPort>(Vec(54, 320), module, VCO2::OUT_OUTPUT));
 
-	addChild(createValueLight<SmallLight<GreenRedPolarityLight>>(Vec(68, 41), &module->outputs[VCO2::PITCH_LIGHT].value));
+	addChild(createLight<SmallLight<GreenRedLight>>(Vec(68, 42.5), module, VCO2::PHASE_POS_LIGHT));
 }
 
 
